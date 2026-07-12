@@ -432,9 +432,23 @@ class DatadisConnector:
             if "consumptionKWh" in i:
                 if all(k in i for k in GET_CONSUMPTION_DATA_MANDATORY_FIELDS):
                     hour = str(int(i["time"].split(":")[0]) - 1)
-                    date_as_dt = datetime.strptime(
-                        f"{i['date']} {hour.zfill(2)}:00", "%Y/%m/%d %H:%M"
-                    )
+                    try:
+                        date_as_dt = datetime.strptime(
+                            f"{i['date']} {hour.zfill(2)}:00", "%Y/%m/%d %H:%M"
+                        )
+                    except ValueError:
+                        # Datadis occasionally emits a spurious extra "0:00" reading on top
+                        # of an already-complete 1:00-24:00 sequence for the same day (seen
+                        # for a supply under distributor IDE, obtainMethod empty i.e.
+                        # estimated, not a real meter read). The 00:00-01:00 interval is
+                        # already covered by the "1:00" entry, so this is a duplicate to
+                        # discard, not a record to reinterpret/reassign to another day.
+                        _LOGGER.warning(
+                            "Discarding unparsable consumption record with date=%s time=%s "
+                            "(likely a duplicate/estimated reading from Datadis)",
+                            i.get("date"), i.get("time"),
+                        )
+                        continue
                     if not (start_date <= date_as_dt <= end_date):
                         continue  # skip element if dt is out of range
                     _surplus = i.get("surplusEnergyKWh", 0)
